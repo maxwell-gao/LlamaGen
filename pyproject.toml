@@ -13,3 +13,5 @@ dependencies = [
     "torchvision>=0.17.1",
     "vllm==0.4.1",
 ]
+[tool.setuptools]
+packages = ["autoregressive", "language", "tokenizer", "evaluations"]
