@@ -13,6 +13,7 @@ dependencies = [
     "torch==2.2.1",
     "torchvision>=0.17.1",
     "vllm==0.4.1",
+    "wandb>=0.23.1",
 ]
 [tool.setuptools]
 packages = ["autoregressive", "language", "tokenizer", "evaluations", "utils"]
