@@ -470,7 +470,10 @@ def main(args):
     if os.path.exists(tokens_path) and not args.force_generate:
         print(f"\nFound existing visual tokens at {tokens_path}. Skipping generation.")
         visual_tokens = torch.load(tokens_path, map_location=args.device)
-        reference_image = reconstruct_image(None, vq_model, visual_tokens, latent_size, args)[0] # Just decode
+        # Directly decode the saved visual tokens to get a reference image
+        index_sample = visual_tokens.reshape(-1, latent_size, latent_size).unsqueeze(1)
+        with torch.inference_mode():
+            reference_image = vq_model.decode_code(index_sample, shape=[visual_tokens.size(0), args.codebook_embed_dim, latent_size, latent_size])
     else:
         # ⚠️ We are generating a fixed (all same token ID) target sequence
         visual_tokens, reference_image = get_reference_tokens(vq_model, args)
