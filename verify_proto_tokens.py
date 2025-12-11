@@ -508,7 +508,7 @@ def verify_proto_tokens(model, visual_tokens, args, vq_model=None, latent_size=N
                         {
                             f"reconstructed_image_step_{step + 1}": wandb.Image(
                                 recon_vis,
-                                caption=f"Reconstructed @ step {step + 1} (Acc {eval_acc:.2f}%)",
+                                caption="Reconstructed",
                             ),
                             "step": step + 1,
                         }
