@@ -296,9 +296,10 @@ def get_reference_tokens(vq_model, gpt_model, args):
     if getattr(args, 'class_id', None) is not None:
         class_labels = [int(args.class_id)]
     else:
-        class_labels = [207, 360, 387, 974, 88, 979, 417, 279]
+        # default to a single class (first of sample list) to generate one image
+        class_labels = [207]
 
-    print(f"Generating images for class ids: {class_labels}")
+    print(f"Generating image for class id: {class_labels[0]}")
 
     c_indices = torch.tensor(class_labels, device=device)
 
