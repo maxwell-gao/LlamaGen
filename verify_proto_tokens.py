@@ -291,37 +291,38 @@ def get_reference_tokens(vq_model, gpt_model, args):
 
     print(f"Target sequence length: {seq_length}")
 
-    # prepare conditioning class id
+    # prepare conditioning class ids (use same default list as sample_c2i.py)
     device = next(gpt_model.parameters()).device
-    class_id = getattr(args, 'class_id', None)
-    if class_id is None:
-        # default class list from sample_c2i.py: take the first one
+    if getattr(args, 'class_id', None) is not None:
+        class_labels = [int(args.class_id)]
+    else:
         class_labels = [207, 360, 387, 974, 88, 979, 417, 279]
-        class_id = class_labels[0]
 
-    print(f"Generating image for class id: {class_id}")
+    print(f"Generating images for class ids: {class_labels}")
 
-    c_indices = torch.tensor([class_id], device=device)
+    c_indices = torch.tensor(class_labels, device=device)
 
-    # sample visual token indices with the repo's generate() function
+    # sample visual token indices with the repo's generate() function (match sample_c2i behavior)
     with torch.inference_mode():
         index_sample = generate(
             gpt_model, c_indices, seq_length,
-            cfg_scale=args.cfg_scale,
-            temperature=args.temperature, top_k=args.top_k,
-            top_p=args.top_p, sample_logits=True,
+            cfg_scale=getattr(args, 'cfg_scale', 1.0),
+            cfg_interval=getattr(args, 'cfg_interval', -1),
+            temperature=getattr(args, 'temperature', 1.0),
+            top_k=getattr(args, 'top_k', 0),
+            top_p=getattr(args, 'top_p', 1.0),
+            sample_logits=True,
         )
 
-    # index_sample: [batch, seq_length]
-    # decode to image via VQ model
+    # index_sample: [batch=len(class_labels), seq_length]
+    # decode to images via VQ model
     qzshape = [index_sample.shape[0], args.codebook_embed_dim, latent_size, latent_size]
-    # ensure indices are on the same device as vq_model
     vq_dev = next(vq_model.parameters()).device
     index_sample = index_sample.to(vq_dev)
 
     with torch.inference_mode():
-        # reshape as expected by some decode functions: (batch, 1, H, W) of indices
         index_for_decode = index_sample.reshape(-1, latent_size, latent_size).unsqueeze(1)
+        # call decode_code with shape parameter matching repo usage
         reference_image = vq_model.decode_code(index_for_decode, shape=qzshape)
 
     print(f"✓ Generated visual tokens shape: {index_sample.shape}")
@@ -576,6 +577,11 @@ if __name__ == "__main__":
     parser.add_argument("--image-size", type=int, choices=[256, 384, 512], default=384)
     parser.add_argument("--downsample-size", type=int, choices=[8, 16], default=16)
     parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--cfg-scale", type=float, default=4.0, help="classifier-free guidance scale")
+    parser.add_argument("--cfg-interval", type=int, default=-1, help="classifier-free guidance interval")
+    parser.add_argument("--top-k", type=int, default=2000, help="top-k value to sample with")
+    parser.add_argument("--temperature", type=float, default=1.0, help="temperature value to sample with")
+    parser.add_argument("--top-p", type=float, default=1.0, help="top-p value to sample with")
     parser.add_argument("--class-id", type=int, default=None, help="Class id to condition generation on (default: first from sample list)")
     
     # --- Optimization related (from SimpleAR code) ---
