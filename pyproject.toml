@@ -14,4 +14,4 @@ dependencies = [
     "vllm==0.4.1",
 ]
 [tool.setuptools]
-packages = ["autoregressive", "language", "tokenizer", "evaluations"]
+packages = ["autoregressive", "language", "tokenizer", "evaluations", "utils"]
