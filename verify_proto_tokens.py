@@ -270,7 +270,7 @@ class ProtoTokenOptimizer:
     # ---------------------------------------------------------------------------------------
 
 
-def get_reference_tokens(vq_model, args):
+def get_reference_tokens(vq_model, gpt_model, args):
     """
     Generate a blank image/tokens or load an existing image's tokens
     
@@ -285,44 +285,47 @@ def get_reference_tokens(vq_model, args):
     print("Step 1: Generate/Encode Target Visual Tokens (Placeholder)")
     print("="*80)
     
+    # Class-conditional generation: use GPT to sample visual tokens conditioned on a class id
     latent_size = args.image_size // args.downsample_size
     seq_length = latent_size ** 2
-    
-    # ---------------------------------------------------------------------------------
-    # ⚠️ 关键修改点：SimpleAR 是 T2I，LlamaGen 示例是 C2I。
-    # 我们不能直接用 C2I 的 Label 生成图像。我们必须提供一个实际图像，然后对其进行编码。
-    # 由于原始代码没有提供实际图像路径，我们使用一个简单的占位符：全 0 令牌序列。
-    # ---------------------------------------------------------------------------------
 
-    # Placeholder Tokens (seq_length tokens with token ID 0)
-    # Note: Token ID 0 might be a padding/special token. 
-    # For robust test, use a token ID within the visual codebook range.
-    # We use a fixed ID (e.g., 100) within the visual codebook range [0, 16384-1]
-    
-    # Target token sequence for optimization: [1, seq_length]
-    # In LlamaGen, visual tokens start from 0 up to codebook_size-1.
-    # SimpleAR had a tokenizer offset. Here, we assume no offset (or handle it in VQ model decode).
-    # We choose a token ID near the middle of the codebook for better initialization test.
-    target_token_id = args.codebook_size // 2 
-    visual_tokens = torch.full((1, seq_length), target_token_id, 
-                                dtype=torch.long, device=args.device)
-    
     print(f"Target sequence length: {seq_length}")
-    print(f"Target token ID (Placeholder): {target_token_id}")
 
-    # Decode the target tokens to get the 'reference image' (visualizing the target)
-    index_sample = visual_tokens 
-    index_sample = index_sample.reshape(-1, latent_size, latent_size).unsqueeze(1)
-    
+    # prepare conditioning class id
+    device = next(gpt_model.parameters()).device
+    class_id = getattr(args, 'class_id', None)
+    if class_id is None:
+        # default class list from sample_c2i.py: take the first one
+        class_labels = [207, 360, 387, 974, 88, 979, 417, 279]
+        class_id = class_labels[0]
+
+    print(f"Generating image for class id: {class_id}")
+
+    c_indices = torch.tensor([class_id], device=device)
+
+    # sample visual token indices with the repo's generate() function
     with torch.inference_mode():
-        reference_image = vq_model.decode_code(index_sample, shape=[1, args.codebook_embed_dim, latent_size, latent_size])
-    
-    # Normalize image to [0, 1] for saving if necessary, though VQ output is [-1, 1]
-    # The original save_image call handles normalization [(-1, 1)]
-    
-    print(f"✓ Target tokens shape: {visual_tokens.shape}")
-    
-    return visual_tokens, reference_image
+        index_sample = generate(
+            gpt_model, c_indices, seq_length,
+            cfg_scale=args.cfg_scale,
+            temperature=args.temperature, top_k=args.top_k,
+            top_p=args.top_p, sample_logits=True,
+        )
+
+    # index_sample: [batch, seq_length]
+    # decode to image via VQ model
+    qzshape = [index_sample.shape[0], args.codebook_embed_dim, latent_size, latent_size]
+    # ensure indices are on the same device as vq_model
+    vq_dev = next(vq_model.parameters()).device
+    index_sample = index_sample.to(vq_dev)
+
+    with torch.inference_mode():
+        # reshape as expected by some decode functions: (batch, 1, H, W) of indices
+        index_for_decode = index_sample.reshape(-1, latent_size, latent_size).unsqueeze(1)
+        reference_image = vq_model.decode_code(index_for_decode, shape=qzshape)
+
+    print(f"✓ Generated visual tokens shape: {index_sample.shape}")
+    return index_sample, reference_image
 
 
 def verify_proto_tokens(model, visual_tokens, args):
@@ -481,8 +484,8 @@ def main(args):
         with torch.inference_mode():
             reference_image = vq_model.decode_code(index_sample, shape=[visual_tokens.size(0), args.codebook_embed_dim, latent_size, latent_size])
     else:
-        # ⚠️ We are generating a fixed (all same token ID) target sequence
-        visual_tokens, reference_image = get_reference_tokens(vq_model, args)
+        # Generate class-conditional image tokens and reference image via GPT + VQ
+        visual_tokens, reference_image = get_reference_tokens(vq_model, gpt_model, args)
         torch.save(visual_tokens, tokens_path)
         print(f"Visual tokens saved to: {tokens_path}")
 
@@ -573,6 +576,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-size", type=int, choices=[256, 384, 512], default=384)
     parser.add_argument("--downsample-size", type=int, choices=[8, 16], default=16)
     parser.add_argument("--num-classes", type=int, default=1000)
+    parser.add_argument("--class-id", type=int, default=None, help="Class id to condition generation on (default: first from sample list)")
     
     # --- Optimization related (from SimpleAR code) ---
     parser.add_argument("--num-steps", type=int, default=1000, help="Optimization steps")
