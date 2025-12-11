@@ -344,7 +344,7 @@ def get_reference_tokens(vq_model, gpt_model, args):
     return index_sample, reference_image
 
 
-def verify_proto_tokens(model, visual_tokens, args):
+def verify_proto_tokens(model, visual_tokens, args, vq_model=None, latent_size=None):
     """
     Verify if proto-tokens can reconstruct visual token sequence
     (Same as original SimpleAR implementation, but without tokenizer_offset)
@@ -402,6 +402,29 @@ def verify_proto_tokens(model, visual_tokens, args):
             print(f"\n[Step {step+1}/{args.num_steps}]")
             print(f"  Accuracy: {accuracy:.2f}% ({correct}/{seq_length} tokens)")
             print(f"  Best Accuracy: {best_accuracy:.2f}% (at step {best_step})")
+        # Periodic evaluation: reconstruct and upload image to WandB (if enabled)
+        if getattr(args, 'eval_interval', 0) > 0 and ((step + 1) % args.eval_interval == 0):
+            # Run evaluation to collect metrics
+            eval_loss, eval_acc, eval_correct, eval_top5 = optimizer.evaluate(visual_tokens)
+            print(f"[Eval @ step {step+1}] Loss: {eval_loss:.4f}  Acc: {eval_acc:.2f}% ({eval_correct}/{seq_length})")
+
+            # If VQ model provided and WandB is enabled, reconstruct image and upload
+            if args.use_wandb and WANDB_AVAILABLE and vq_model is not None and latent_size is not None:
+                try:
+                    recon_image, recon_tokens = reconstruct_image(optimizer, vq_model, visual_tokens, latent_size, args)
+                    # Prepare visualization and upload to WandB
+                    recon_vis = (recon_image[0].float().cpu() + 1) / 2
+                    recon_vis = torch.clamp(recon_vis, 0, 1)
+                    wandb.log({
+                        f"eval/reconstructed_image_step_{step+1}": wandb.Image(recon_vis, caption=f"Reconstructed @ step {step+1} (Acc {eval_acc:.2f}%)"),
+                        'step': step+1
+                    })
+                    # Also save locally
+                    recon_path = os.path.join(args.save_dir, f"reconstructed_image_step_{step+1}.png")
+                    save_image(recon_image, recon_path, normalize=True, value_range=(-1, 1))
+                    print(f"Saved eval reconstructed image to: {recon_path}")
+                except Exception as e:
+                    print(f"Warning: failed to reconstruct/upload eval image at step {step+1}: {e}")
             
     # Save proto-tokens
     proto_tokens_path = os.path.join(args.save_dir, "proto_tokens.pt")
@@ -525,7 +548,7 @@ def main(args):
         })
 
     # Step 2: Optimize proto-tokens
-    optimizer = verify_proto_tokens(gpt_model, visual_tokens, args)
+    optimizer = verify_proto_tokens(gpt_model, visual_tokens, args, vq_model=vq_model, latent_size=latent_size)
     
     # Step 3: Reconstruct image
     reconstructed_image, reconstructed_tokens = reconstruct_image(
@@ -602,6 +625,7 @@ if __name__ == "__main__":
     # --- Optimization related (from SimpleAR code) ---
     parser.add_argument("--num-steps", type=int, default=1000, help="Optimization steps")
     parser.add_argument("--learning-rate", type=float, default=0.01, help="Learning rate (Note: currently hardcoded to 0.01 in optimizer init)")
+    parser.add_argument("--eval-interval", type=int, default=100, help="Evaluation interval (steps). When >0, run evaluation and upload reconstructed_image each interval")
     
     # --- Target Generation related (Modified) ---
     parser.add_argument("--force-generate", action="store_true", help="Force generate/re-encode target tokens")
