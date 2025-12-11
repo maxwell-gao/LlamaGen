@@ -309,7 +309,7 @@ def get_reference_tokens(vq_model, args):
     index_sample = index_sample.reshape(-1, latent_size, latent_size).unsqueeze(1)
     
     with torch.inference_mode():
-        reference_image = vq_model.decode_code(index_sample, qzshape=[1, args.codebook_embed_dim, latent_size, latent_size])
+        reference_image = vq_model.decode_code(index_sample, shape=[1, args.codebook_embed_dim, latent_size, latent_size])
     
     # Normalize image to [0, 1] for saving if necessary, though VQ output is [-1, 1]
     # The original save_image call handles normalization [(-1, 1)]
@@ -418,7 +418,7 @@ def reconstruct_image(optimizer, vq_model, visual_tokens, latent_size, args):
     index_sample = index_sample.reshape(-1, latent_size, latent_size).unsqueeze(1)
     
     with torch.inference_mode():
-        reconstructed_image = vq_model.decode_code(index_sample, qzshape=[1, args.codebook_embed_dim, latent_size, latent_size])
+        reconstructed_image = vq_model.decode_code(index_sample, shape=[1, args.codebook_embed_dim, latent_size, latent_size])
     
     print("✓ Image reconstruction completed")
     
