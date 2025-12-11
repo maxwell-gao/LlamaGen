@@ -3,9 +3,10 @@ name = "llamagen"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.10.19"
 dependencies = [
     "gradio>=6.1.0",
-    "hf>=1.2.2",
-    "torch>=2.9.1",
+    "pillow>=12.0.0",
+    "torch==2.2.1",
+    "vllm==0.4.1",
 ]
