@@ -165,20 +165,20 @@ class ProtoTokenOptimizer:
             freqs_cis = freqs_all[input_pos] if freqs_all is not None else None
 
         # pass through transformer blocks
-        # Some KV cache buffers may be 'inference tensors' (created under inference_mode)
-        # which cannot be updated in-place outside inference mode. Make a safe clone
-        # of those buffers so the Attention.kv_cache.update can write into them.
-        for layer in model.layers:
-            if hasattr(layer, 'attention') and getattr(layer.attention, 'kv_cache', None) is not None:
+        # KV cache tensors may be marked as "inference tensors" (created under
+        # inference_mode). Updating them inplace will fail unless we operate
+        # inside inference_mode; we need gradients for proto-tokens, so instead
+        # convert those buffers to normal tensors by cloning them here.
+        for b in model.layers:
+            if hasattr(b.attention, 'kv_cache') and b.attention.kv_cache is not None:
                 try:
-                    kc = layer.attention.kv_cache.k_cache
-                    vc = layer.attention.kv_cache.v_cache
-                    # clone to regular tensors (preserve device/dtype)
-                    layer.attention.kv_cache.k_cache = kc.clone().detach()
-                    layer.attention.kv_cache.v_cache = vc.clone().detach()
+                    b.attention.kv_cache.k_cache = b.attention.kv_cache.k_cache.clone()
+                    b.attention.kv_cache.v_cache = b.attention.kv_cache.v_cache.clone()
                 except Exception:
-                    # if cloning fails for any reason, ignore and let forward raise informative error
+                    # If cloning fails for any reason, continue; the model may still work.
                     pass
+
+        for layer in model.layers:
             h = layer(h, freqs_cis, input_pos, mask=None)
 
         h = model.norm(h)
