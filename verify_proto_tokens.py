@@ -601,7 +601,21 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-project", type=str, default="llmagen-proto-tokens", help="WandB project name")
     parser.add_argument("--wandb-run-name", type=str, default=None, help="WandB run name")
     
-    args = parser.parse_args()
+    # Use parse_known_args to be tolerant if this script is invoked in environments
+    # where additional sampling args might be provided elsewhere. Unknown args
+    # will be parsed by a secondary parser that handles sampling options.
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        extra_parser = argparse.ArgumentParser(add_help=False)
+        extra_parser.add_argument("--cfg-scale", type=float, default=getattr(args, 'cfg_scale', 4.0))
+        extra_parser.add_argument("--cfg-interval", type=int, default=getattr(args, 'cfg_interval', -1))
+        extra_parser.add_argument("--top-k", type=int, default=getattr(args, 'top_k', 2000))
+        extra_parser.add_argument("--temperature", type=float, default=getattr(args, 'temperature', 1.0))
+        extra_parser.add_argument("--top-p", type=float, default=getattr(args, 'top_p', 1.0))
+        extra_args, _ = extra_parser.parse_known_args(unknown)
+        # attach any extra parsed sampling args back onto args
+        for k, v in vars(extra_args).items():
+            setattr(args, k, v)
     args.device = "cuda" if torch.cuda.is_available() and args.device == "cuda" else args.device
     
     if args.use_wandb and args.wandb_run_name is None:
