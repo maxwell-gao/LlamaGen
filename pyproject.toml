@@ -8,7 +8,7 @@ dependencies = [
     "gradio>=6.1.0",
     "pillow>=12.0.0",
     "tensorflow>=2.20.0",
-    "tokenizer>=3.5.5",
+    "tokenizers==0.21.1",
     "torch==2.2.1",
     "torchvision>=0.17.1",
     "vllm==0.4.1",
