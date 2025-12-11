@@ -329,7 +329,13 @@ def verify_proto_tokens(model, visual_tokens, args):
     print("="*80)
     
     seq_length = visual_tokens.size(1)
-    hidden_size = model.config.hidden_size if hasattr(model.config, 'hidden_size') else model.embed_dim 
+    # Determine hidden size from model config (repo uses `config.dim`)
+    if hasattr(model, 'config'):
+        hidden_size = getattr(model.config, 'hidden_size', None) or getattr(model.config, 'dim', None)
+    else:
+        hidden_size = getattr(model, 'embed_dim', None) or getattr(model, 'd_model', None)
+    if hidden_size is None:
+        raise RuntimeError('Could not determine model hidden size (expected model.config.dim or model.embed_dim)')
     
     print(f"Sequence length: {seq_length}")
     print(f"Hidden size: {hidden_size}")
