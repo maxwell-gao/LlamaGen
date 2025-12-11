@@ -48,17 +48,45 @@ def load_llama_gen_models(args, device):
     ).to(device=device, dtype=precision)
     
     checkpoint = torch.load(args.gpt_ckpt, map_location="cpu")
-    # Using LlamaGen style checkpoint loading logic
-    if args.from_fsdp: # fspd
+    # Using LlamaGen style checkpoint loading logic with additional heuristics
+    model_weight = None
+    if args.from_fsdp:
+        # User explicitly asked to treat the file as FSDP-sharded/flattened checkpoint
         model_weight = checkpoint
-    elif "model" in checkpoint:  # ddp
-        model_weight = checkpoint["model"]
-    elif "module" in checkpoint: # deepspeed
-        model_weight = checkpoint["module"]
-    elif "state_dict" in checkpoint:
-        model_weight = checkpoint["state_dict"]
+    elif isinstance(checkpoint, dict):
+        # common containers used by training scripts
+        if "model" in checkpoint and isinstance(checkpoint["model"], dict):
+            model_weight = checkpoint["model"]
+        elif "module" in checkpoint and isinstance(checkpoint["module"], dict):
+            model_weight = checkpoint["module"]
+        elif "state_dict" in checkpoint and isinstance(checkpoint["state_dict"], dict):
+            model_weight = checkpoint["state_dict"]
+        elif "model_state_dict" in checkpoint and isinstance(checkpoint["model_state_dict"], dict):
+            model_weight = checkpoint["model_state_dict"]
+        elif "params" in checkpoint and isinstance(checkpoint["params"], dict):
+            model_weight = checkpoint["params"]
+        else:
+            # Heuristic: sometimes the checkpoint file is itself a flat state-dict
+            # (mapping param_name -> tensor). Detect that case and use it directly.
+            try:
+                all_tensor_vals = all(isinstance(v, torch.Tensor) for v in checkpoint.values())
+            except Exception:
+                all_tensor_vals = False
+
+            if all_tensor_vals:
+                model_weight = checkpoint
+            else:
+                # Print some helpful debug info and raise a clearer error
+                keys_sample = list(checkpoint.keys())[:20]
+                raise Exception(
+                    "Could not find model weights in checkpoint. "
+                    f"Found top-level keys: {keys_sample}...\n"
+                    "If this is an FSDP/sharded checkpoint, pass --from-fsdp. "
+                    "If this is a HuggingFace-safe checkpoint, inspect the file and pass an appropriate flag."
+                )
     else:
-        raise Exception("please check model weight, maybe add --from-fsdp to run command")
+        # Non-dict checkpoint (e.g., list/tuple or unexpected format) — fall back to using it
+        model_weight = checkpoint
         
     gpt_model.load_state_dict(model_weight, strict=False)
     gpt_model.eval()
