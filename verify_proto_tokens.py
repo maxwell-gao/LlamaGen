@@ -152,11 +152,17 @@ class ProtoTokenOptimizer:
             input_pos = torch.arange(0, h.shape[1], device=device)
 
         # determine freqs_cis to use in the layers
+        # ensure freqs_cis tensor is on the same device as inputs to avoid CPU/GPU indexing errors
+        if hasattr(model, 'freqs_cis') and model.freqs_cis is not None:
+            freqs_all = model.freqs_cis.to(device)
+        else:
+            freqs_all = None
+
         if model.training:
-            freqs_cis = model.freqs_cis[: h.shape[1]]
+            freqs_cis = freqs_all[: h.shape[1]] if freqs_all is not None else None
         else:
             # model.freqs_cis indexed by positions
-            freqs_cis = model.freqs_cis[input_pos]
+            freqs_cis = freqs_all[input_pos] if freqs_all is not None else None
 
         # pass through transformer blocks
         for layer in model.layers:
