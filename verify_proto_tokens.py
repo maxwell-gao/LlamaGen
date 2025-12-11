@@ -121,7 +121,7 @@ class ProtoTokenOptimizer:
         # Optimizer
         self.optimizer = torch.optim.AdamW(
             [self.e_t, self.m],
-            lr=0.01, # args.learning_rate is used in main, but hardcoded here as per original code
+            lr=0.001, # args.learning_rate is used in main, but hardcoded here as per original code
             weight_decay=0.0
         )
         
