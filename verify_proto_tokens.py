@@ -298,7 +298,7 @@ class ProtoTokenOptimizer:
         ).item()
 
         # Gradient clipping
-        torch.nn.utils.clip_grad_norm_([self.e_t, self.m], max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_([self.e_t, self.m], max_norm=0.5)
 
         self.optimizer.step()
         self.scheduler.step()
