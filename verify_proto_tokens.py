@@ -206,8 +206,9 @@ class ProtoTokenOptimizer:
         # logits: [B, L, vocab_size]
         vocab_size = logits.size(-1)
 
-        # move target tokens to model device
-        target = target_tokens.to(logits.device)
+        # move target tokens to model device and ensure int64 dtype required by
+        # torch.nn.functional.cross_entropy (targets must be LongTensor)
+        target = target_tokens.to(logits.device).long()
 
         # Compute loss
         loss = F.cross_entropy(
