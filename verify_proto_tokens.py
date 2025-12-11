@@ -506,7 +506,7 @@ def verify_proto_tokens(model, visual_tokens, args, vq_model=None, latent_size=N
                     recon_vis = torch.clamp(recon_vis, 0, 1)
                     wandb.log(
                         {
-                            f"reconstructed_image_step_{step + 1}": wandb.Image(
+                            "reconstructed_image": wandb.Image(
                                 recon_vis,
                                 caption="Reconstructed",
                             ),
@@ -805,8 +805,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=0.01,
-        help="Learning rate (Note: currently hardcoded to 0.01 in optimizer init)",
+        default=0.001,
+        help="Learning rate (Note: currently hardcoded to 0.001 in optimizer init)",
     )
     parser.add_argument(
         "--eval-interval",
