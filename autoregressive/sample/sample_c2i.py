@@ -10,6 +10,10 @@ from torchvision.utils import save_image
 
 import time
 import argparse
+current_dir = osp.dirname(osp.abspath(__file__))
+root_dir = osp.join(current_dir, '..', '..') #
+sys.path.append(root_dir)
+
 from tokenizer.tokenizer_image.vq_model import VQ_models
 from autoregressive.models.gpt import GPT_models
 from autoregressive.models.generate import generate
