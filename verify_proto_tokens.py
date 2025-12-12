@@ -109,7 +109,9 @@ def load_llama_gen_models(args, device):
 class ProtoTokenOptimizer:
     """Optimizer class for learning proto-tokens"""
 
-    def __init__(self, model, hidden_size, device, num_steps=1000, use_wandb=False):
+    def __init__(
+        self, model, hidden_size, device, num_steps=1000, use_wandb=False, vq_model=None
+    ):
         self.model = model
         self.device = device
         self.hidden_size = hidden_size
@@ -154,6 +156,22 @@ class ProtoTokenOptimizer:
             "m_norm": [],
             "grad_norm": [],
         }
+        # Optional VQ model for embedding-distance loss
+        # If provided, we'll compute loss as MSE between the predicted
+        # expected codebook embedding (prob-weighted) and the target
+        # codebook embedding of the ground-truth visual token indices.
+        self.vq_model = vq_model
+        if self.vq_model is not None:
+            # VectorQuantizer exposes the embedding as `quantize.embedding`
+            try:
+                self.codebook = self.vq_model.quantize.embedding.weight
+                # keep flag whether codebook uses l2 normalization
+                self.codebook_l2_norm = getattr(
+                    self.vq_model.quantize, "l2_norm", False
+                )
+            except Exception:
+                self.codebook = None
+                self.codebook_l2_norm = False
 
     # LlamaGen/GPT_model 输入的第一个维度是批量大小 (Batch Size)，这里为 1
     def construct_input_embeddings(self, seq_length):
@@ -262,9 +280,36 @@ class ProtoTokenOptimizer:
         target = target_tokens.to(logits.device).long()
 
         # Compute loss
-        loss = F.cross_entropy(
-            logits.view(-1, vocab_size), target.view(-1), reduction="mean"
-        )
+        # If a VQ model was provided, use embedding-distance loss:
+        # - Convert logits -> probs
+        # - Compute expected embedding = probs @ codebook (V x E)
+        # - Lookup target embedding from codebook using target token ids
+        # - Compute MSE between expected embedding and target embedding
+        if (
+            hasattr(self, "vq_model")
+            and self.vq_model is not None
+            and getattr(self, "codebook", None) is not None
+        ):
+            # ensure float precision for softmax and embedding arithmetic
+            probs = F.softmax(logits.float(), dim=-1)  # [B, L, V]
+
+            # codebook: [V, E]
+            codebook = self.codebook.to(probs.device).to(probs.dtype)
+
+            # expected embeddings: [B, L, E]
+            expected_emb = torch.einsum("blv,ve->ble", probs, codebook)
+
+            # target embeddings: gather from codebook using target indices
+            flat_target = target.view(-1)  # [B*L]
+            target_emb = codebook[flat_target].view(target.size(0), target.size(1), -1)
+
+            # MSE loss between expected and target embeddings
+            loss = F.mse_loss(expected_emb, target_emb, reduction="mean")
+        else:
+            # fallback to cross-entropy on token logits
+            loss = F.cross_entropy(
+                logits.view(-1, vocab_size), target.view(-1), reduction="mean"
+            )
 
         # Compute accuracy
         predictions = logits.argmax(dim=-1)
@@ -435,6 +480,7 @@ def verify_proto_tokens(model, visual_tokens, args, vq_model=None, latent_size=N
         device=args.device,
         num_steps=args.num_steps,
         use_wandb=args.use_wandb,
+        vq_model=vq_model,
     )
 
     best_accuracy = 0
